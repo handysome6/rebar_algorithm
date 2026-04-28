@@ -1,0 +1,60 @@
+# Rebar Detection Configuration
+# 钢筋检测配置 - YOLO 服务器配置
+
+# 主服务器配置
+primary_server:
+  # Cloudflare 代理域名
+  server_url: https://yolo.andy6.link/
+  
+  # 请求超时时间（秒）
+  timeout: 60
+  
+  # 是否启用
+  enabled: true
+
+# 备用服务器配置
+fallback_server:
+  # Jetson Hotspot 本地IP
+  server_url: http://10.42.0.1:8000
+  
+  # 请求超时时间（秒）
+  timeout: 60
+  
+  # 是否启用
+  enabled: true
+
+# 检测配置
+detection:
+  # 是否优先使用现有标注（如果存在）
+  use_existing_annotations: true
+  
+  # 输出目录名称（相对于项目路径）
+  output_dir_name: rebar_output_sam
+
+# 可视化配置
+visualization:
+  # 是否使用矫正后的图像进行可视化
+  use_rectified_for_visualization: true
+
+# 3D平面提取配置 (Plane Extraction Configuration)
+plane_extraction:
+  # 是否启用3D平面提取（Enable 3D plane extraction stage）
+  # 该功能使用RANSAC检测表面平面，仅保留距离平面±distance_threshold内的点
+  # Uses RANSAC to detect surface plane and keeps only points within ±distance_threshold
+  enabled: true
+
+  # 距离阈值（米）- Distance threshold in meters
+  # 仅保留距离检测平面此范围内的点（默认±10cm）
+  # Only keep points within this distance from detected plane (default ±10cm)
+  distance_threshold: 0.03
+
+  # RANSAC迭代次数 - RANSAC iterations
+  # 增加迭代次数可提高鲁棒性但会增加处理时间
+  # Increasing iterations improves robustness but increases processing time
+  ransac_iterations: 500
+
+  # RANSAC内点距离阈值（米）- RANSAC inlier distance threshold (meters)
+  # 用于平面拟合的内点判断阈值（默认1cm）
+  # Threshold for classifying inliers during plane fitting (default 1cm)
+  ransac_distance_threshold: 0.01
+
