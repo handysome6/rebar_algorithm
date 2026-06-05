@@ -67,6 +67,7 @@ class LineFittingAnalyzer:
         save_image: bool = True,
         refined_mask: Optional[np.ndarray] = None,
         plane_metadata: Optional[Dict] = None,
+        project_path: Optional[Path] = None,
         depth_meter_path: Optional[Path] = None,
     ) -> bool:
         self.output_folder = Path(output_folder) if output_folder else Path("line_fitting_results")
@@ -75,8 +76,8 @@ class LineFittingAnalyzer:
         if not self.set_input_files(json_path, image_path):
             return False
 
-        if plane_metadata is not None and depth_meter_path is not None:
-            self.set_plane_data(plane_metadata, depth_meter_path)
+        if plane_metadata is not None and (project_path is not None or depth_meter_path is not None):
+            self.set_plane_data(plane_metadata, project_path=project_path, depth_path=depth_meter_path)
 
         if not self.extract_centers():
             return False
@@ -408,18 +409,34 @@ class LineFittingAnalyzer:
 
     # -- plane-space projection -----------------------------------------------
 
-    def set_plane_data(self, meta, depth_path, k_path=None):
+    def set_plane_data(self, meta, project_path=None, depth_path=None, k_path=None):
         n = np.array(meta["plane_normal"], dtype=float)
         if np.linalg.norm(n) < 1e-6:
             return False
         self.plane_normal = n / np.linalg.norm(n)
         self.plane_d = float(meta["plane_distance"])
-        dp = Path(depth_path)
-        if not dp.exists():
+
+        pp = Path(project_path) if project_path else None
+
+        # Load depth: prefer xyz_map.npz Z-channel, fall back to depth_meter.npy
+        if pp and (pp / "xyz_map.npz").exists():
+            xyz = np.load(str(pp / "xyz_map.npz"))["xyz_map"]
+            self.depth_meter = xyz[..., 2]
+        elif depth_path and Path(depth_path).exists():
+            self.depth_meter = np.load(str(depth_path))
+        else:
             return False
-        self.depth_meter = np.load(str(dp))
-        kp = Path(k_path) if k_path else dp.parent / "K.txt"
-        self.K_matrix = self._load_K(kp)
+
+        # Load K: try project_path/K.txt, then explicit k_path, then depth_path sibling
+        if k_path:
+            self.K_matrix = self._load_K(Path(k_path))
+        elif pp and (pp / "K.txt").exists():
+            self.K_matrix = self._load_K(pp / "K.txt")
+        elif depth_path:
+            self.K_matrix = self._load_K(Path(depth_path).parent / "K.txt")
+        else:
+            self.K_matrix = None
+
         return self.K_matrix is not None
 
     @staticmethod
@@ -575,6 +592,7 @@ class LineFitter:
         output_path: Path,
         refined_mask: Optional[np.ndarray] = None,
         plane_metadata: Optional[Dict] = None,
+        project_path: Optional[Path] = None,
         depth_meter_path: Optional[Path] = None,
         save_json: bool = True,
         save_image: bool = True,
@@ -594,6 +612,7 @@ class LineFitter:
             save_image=save_image,
             refined_mask=refined_mask,
             plane_metadata=plane_metadata,
+            project_path=project_path,
             depth_meter_path=depth_meter_path,
         )
 

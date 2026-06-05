@@ -121,7 +121,7 @@ def run_pipeline(
         output_path=output_path,
         refined_mask=refined_mask,
         plane_metadata=plane_metadata,
-        depth_meter_path=project_path / "depth_meter.npy",
+        project_path=project_path,
     )
     final_image_path = line_result["final_image_path"]
     analysis_json_path = line_result["analysis_json_path"]

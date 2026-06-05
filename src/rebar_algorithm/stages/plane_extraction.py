@@ -16,7 +16,7 @@ import json
 import numpy as np
 from loguru import logger
 
-from ..data import PCDProject
+from ..data import StereoProject
 
 
 # ---------------------------------------------------------------------------
@@ -54,10 +54,10 @@ class PlaneExtractorImpl:
         original_mask_shape = sam_mask.shape
         mask_was_resized = False
 
-        # Step 1: load point cloud
-        pcd = PCDProject(project_path)
-        points_3d = pcd.points
-        h, w = pcd.h, pcd.w
+        # Step 1: load 3D data
+        project = StereoProject(project_path)
+        points_3d = project.points
+        h, w = project.h, project.w
 
         # Resize mask if needed
         if sam_mask.shape != (h, w):

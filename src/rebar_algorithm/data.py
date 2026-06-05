@@ -1,9 +1,9 @@
 """
-Point cloud data loading and project management.
+Stereo project data loading.
 
 Provides:
-- read_ply_points(): Fast binary PLY reader (replaces Open3D for performance)
-- PCDProject: Loads and manages a stereo project's point cloud, images, and depth data
+- StereoProject: Loads a stereo project from xyz_map.npz + rect_left.jpg + K.txt
+- read_ply_points(): Fast binary PLY reader (kept for backward compatibility)
 """
 
 from pathlib import Path
@@ -15,6 +15,79 @@ from PIL import Image
 
 from .config import ProjectFileNames
 
+
+class StereoProject:
+    """Loads a stereo project's 3D data, image, and camera intrinsics.
+
+    Required files in project_path:
+        - xyz_map.npz   — per-pixel 3D coordinates (H, W, 3), metres
+        - rect_left.jpg — rectified left image (or raw_left.jpg)
+        - K.txt          — camera intrinsics (3x3 matrix) + baseline on second line
+    """
+
+    def __init__(self, project_path: Union[str, Path]):
+        self.project_path = Path(project_path)
+
+        # Load xyz_map
+        xyz_path = self.project_path / "xyz_map.npz"
+        if not xyz_path.exists():
+            raise FileNotFoundError(f"xyz_map.npz not found in {project_path}")
+        self.xyz_map: np.ndarray = np.load(str(xyz_path))["xyz_map"]
+        self.h, self.w = self.xyz_map.shape[:2]
+        self.points: np.ndarray = self.xyz_map.reshape(-1, 3)
+
+        # Load image
+        self.image_path = self._find_image()
+        self.image: np.ndarray = np.array(Image.open(self.image_path))
+
+        # Load camera intrinsics
+        self.K: Optional[np.ndarray] = None
+        self.baseline: Optional[float] = None
+        k_path = self.project_path / "K.txt"
+        if k_path.exists():
+            self.K, self.baseline = self._load_K(k_path)
+
+    def _find_image(self) -> Path:
+        candidates = [
+            self.project_path / ProjectFileNames.RECT_LEFT,
+            self.project_path / ProjectFileNames.RAW_LEFT,
+        ]
+        for c in candidates:
+            if c.exists():
+                return c
+        raise FileNotFoundError(
+            f"No rectified image found in {self.project_path}. "
+            f"Tried: {', '.join(c.name for c in candidates)}"
+        )
+
+    @staticmethod
+    def _load_K(path: Path) -> Tuple[Optional[np.ndarray], Optional[float]]:
+        try:
+            with open(path) as f:
+                lines = f.read().strip().split("\n")
+            vals = list(map(float, lines[0].split()))
+            K = np.array(vals).reshape(3, 3) if len(vals) == 9 else None
+            baseline = float(lines[1]) if len(lines) > 1 else None
+            return K, baseline
+        except Exception:
+            return None, None
+
+    def get_3d_point(self, x: int, y: int) -> Optional[np.ndarray]:
+        """Get the 3D coordinate at pixel (x, y), or None if invalid."""
+        if 0 <= x < self.w and 0 <= y < self.h:
+            pt = self.xyz_map[y, x]
+            if np.isfinite(pt).all() and pt[2] > 0:
+                return pt
+        return None
+
+    def compute_depth(self) -> np.ndarray:
+        """Extract per-pixel depth (Z coordinate) from xyz_map."""
+        return self.xyz_map[..., 2]
+
+
+# ---------------------------------------------------------------------------
+# Legacy PLY reader (kept for backward compatibility)
+# ---------------------------------------------------------------------------
 
 def read_ply_points(
     file_path: Union[str, Path],
@@ -105,79 +178,3 @@ def read_ply_points(
     if load_colors:
         return points, colors
     return points
-
-
-class PCDProject:
-    """Loads and manages a stereo project's point cloud, images, and depth data."""
-
-    def __init__(self, project_path: Union[str, Path]):
-        self.project_path = Path(project_path)
-        self.pcd_path = self.project_path / "cloud.ply"
-
-        # Scaled image (img0)
-        img_jpg = self.project_path / "img0.jpg"
-        img_png = self.project_path / "img0.png"
-        if img_jpg.exists():
-            self.image_path = img_jpg
-        elif img_png.exists():
-            self.image_path = img_png
-        else:
-            raise FileNotFoundError(f"Neither img0.jpg nor img0.png found in {project_path}")
-
-        self.disp_path = self.project_path / "disp.npy"
-
-        # Load point cloud
-        self.points: np.ndarray = read_ply_points(str(self.pcd_path))
-
-        self.image = np.array(Image.open(self.image_path))
-        self.disp_data = np.load(self.disp_path)
-        self.h, self.w = self.image.shape[:2]
-
-        assert len(self.points) == self.h * self.w, (
-            f"Point count ({len(self.points)}) != image pixels ({self.h * self.w})"
-        )
-        self.reshape_points = self.points.reshape(self.h, self.w, 3)
-
-        # Original (rectified) image
-        self.original_image_path = self._find_original_image()
-        if self.original_image_path is not None:
-            self.original_image = np.array(Image.open(self.original_image_path))
-            self.scale = self.w / self.original_image.shape[1]
-        else:
-            self.original_image = None
-            self.scale = None
-
-    def _find_original_image(self) -> Optional[Path]:
-        candidates = [
-            self.project_path / ProjectFileNames.RECT_LEFT,
-            self.project_path / ProjectFileNames.RAW_LEFT,
-        ]
-        for c in candidates:
-            if c.exists():
-                return c
-        # Legacy: file starting with folder name
-        for f in self.project_path.iterdir():
-            if f.is_file() and f.name.startswith(self.project_path.name):
-                if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp"):
-                    return f
-        return None
-
-    def mask_scaled_image(self, mask: np.ndarray, background_color=None) -> np.ndarray:
-        assert mask.shape == (self.h, self.w)
-        out = self.image.copy()
-        m = mask.astype(bool)
-        if background_color is None:
-            out[~m] = 0
-        else:
-            out[~m] = background_color
-        return out
-
-    def mask_original_image(self, mask: np.ndarray, background_color=None) -> np.ndarray:
-        scaled = cv2.resize(mask, (self.original_image.shape[1], self.original_image.shape[0]))
-        m = scaled.astype(bool)
-        out = self.original_image.copy()
-        if background_color is None:
-            out[~m] = 0
-        else:
-            out[~m] = background_color
-        return out.astype(np.uint8)
