@@ -1,0 +1,19 @@
+# SAM (Segment Anything Model) Configuration
+
+# Primary server
+primary_server:
+  server_url: https://stereo-hq.andy6.link
+  model: vit_h
+  use_tensorrt: true
+  alpha: 0.5
+  timeout: 30
+  enabled: true
+
+# Fallback server
+fallback_server:
+  server_url: http://10.42.0.1:5001
+  model: vit_h
+  use_tensorrt: true
+  alpha: 0.5
+  timeout: 20
+  enabled: true
