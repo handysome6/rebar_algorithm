@@ -152,17 +152,39 @@ def main():
     logger.remove()
     logger.add(sys.stderr, level="INFO", format="<level>{message}</level>")
 
+    import time
+
     logger.info("=" * 70)
     logger.info(" Experiment: YOLO-guided SAM segmentation")
     logger.info("=" * 70)
 
+    timings = {}
+
+    t0 = time.perf_counter()
     centers, image_size = step1_yolo_on_raw_image()
+    timings["Step 1: YOLO on raw image"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     top_points = step2_pick_top_k(centers, TOP_K, image_size=image_size)
+    timings["Step 2: Point selection"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     sam_mask = step3_sam_segment(top_points)
+    timings["Step 3: SAM segmentation"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     final_img, json_path = step4_run_pipeline(sam_mask, top_points)
+    timings["Step 4: Full pipeline"] = time.perf_counter() - t0
 
     logger.info("\n" + "=" * 70)
-    logger.info(" Experiment Complete")
+    logger.info(" Timing Summary")
+    logger.info("-" * 70)
+    total = 0.0
+    for label, dt in timings.items():
+        logger.info(f"  {label:<40s} {dt:6.2f}s")
+        total += dt
+    logger.info(f"  {'TOTAL':<40s} {total:6.2f}s")
+    logger.info("=" * 70)
     logger.info(f"  Result image:  {final_img}")
     logger.info(f"  Analysis JSON: {json_path}")
     logger.info("=" * 70)
