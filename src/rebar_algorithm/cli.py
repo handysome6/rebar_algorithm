@@ -18,10 +18,12 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import numpy as np
 from loguru import logger
+
+from .app_api import get_sam_mask as _get_sam_mask
 
 
 DETECTOR_CHOICES = ("yolo", "mask-grid")
@@ -36,51 +38,6 @@ def _parse_point(s: str) -> Tuple[int, int]:
         return int(parts[0]), int(parts[1])
     except ValueError:
         raise argparse.ArgumentTypeError(f"Non-integer coordinate: {s!r}")
-
-
-def _get_sam_mask(
-    project_path: Path,
-    points: List[Tuple[int, int]],
-    output_path: Path,
-) -> Tuple[np.ndarray, list]:
-    """Call the SAM server with positive prompt points and return (mask, points_xy)."""
-    from PIL import Image
-
-    from .clients.sam_client import SamClient
-    from .config import get_sam_config
-
-    image_path = project_path / "rect_left.jpg"
-    if not image_path.exists():
-        image_path = project_path / "raw_left.jpg"
-    if not image_path.exists():
-        raise FileNotFoundError(f"No image found in {project_path}")
-
-    image = np.array(Image.open(image_path))
-    logger.info(f"Loaded image: {image_path.name} ({image.shape[1]}x{image.shape[0]})")
-
-    sam_cfg = get_sam_config()
-    server_config = sam_cfg.get_server_config()
-    client = SamClient(
-        server_url=server_config["server_url"],
-        model=server_config.get("model", "vit_h"),
-        use_tensorrt=server_config.get("use_tensorrt", True),
-        alpha=server_config.get("alpha", 0.5),
-        timeout=server_config.get("timeout", 30),
-    )
-
-    sam_points = [[x, y, 1] for x, y in points]
-    logger.info(f"Requesting SAM segmentation with {len(sam_points)} point(s)...")
-    masks = client.segment(image, sam_points)
-    sam_mask = masks[0]
-    logger.info(f"SAM mask: {sam_mask.shape}, coverage={sam_mask.mean()*100:.1f}%")
-
-    sam_dir = output_path / "sam_segment_results"
-    sam_dir.mkdir(parents=True, exist_ok=True)
-    np.save(str(sam_dir / "sam_mask.npy"), sam_mask)
-    points_xy = [[x, y] for x, y in points]
-    np.save(str(sam_dir / "sam_prompt_points.npy"), np.array(points_xy))
-
-    return sam_mask, points_xy
 
 
 def _build_parser() -> argparse.ArgumentParser:

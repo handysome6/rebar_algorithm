@@ -30,6 +30,7 @@ notebook = [
 
 [project.scripts]
 rebar-demo = "rebar_algorithm.cli:main"
+rebar-gui = "rebar_algorithm.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
