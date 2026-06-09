@@ -332,7 +332,9 @@ class PlaneExtractor:
         }
 
     @staticmethod
-    def update_segmented_image(original_segmented_path: Path, refined_mask: np.ndarray, base_image: np.ndarray):
+    def update_segmented_image(output_path: Path, refined_mask: np.ndarray, base_image: np.ndarray) -> Path:
         seg = base_image.copy()
         seg[refined_mask == 0] = [240, 240, 240]
-        cv2.imwrite(str(original_segmented_path), seg)
+        out = output_path / "plane_extraction_results" / "segmented_rebar_refined.png"
+        cv2.imwrite(str(out), seg)
+        return out

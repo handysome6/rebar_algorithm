@@ -632,6 +632,8 @@ class LineFitter:
         if img is None:
             return None
         overlay = self.analyzer.visualize_fitted_lines(img=img)
-        out = output_path / "line_fitting_results" / "lines_on_segmented_rebar.png"
+        viz_dir = output_path / "visualization_results"
+        viz_dir.mkdir(parents=True, exist_ok=True)
+        out = viz_dir / "lines_on_segmented_rebar.png"
         cv2.imwrite(str(out), overlay)
         return out

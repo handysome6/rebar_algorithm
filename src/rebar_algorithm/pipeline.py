@@ -80,7 +80,7 @@ def run_pipeline(
             refined_mask = plane_result["refined_mask_original_res"]
             mask_binary = refined_mask
             plane_metadata = plane_result["plane_metadata"]
-            ext.update_segmented_image(segmented_image_path, refined_mask, base_image)
+            segmented_image_path = ext.update_segmented_image(output_path, refined_mask, base_image)
         except Exception as e:
             logger.error(f"Plane extraction failed: {e} — continuing with SAM mask")
     else:
