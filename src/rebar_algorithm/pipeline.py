@@ -14,6 +14,7 @@ Public API:
 from pathlib import Path
 from typing import Optional, Tuple
 
+import cv2
 import numpy as np
 from loguru import logger
 
@@ -39,6 +40,16 @@ def _select_visualization_image(project_path: Path, project_id: str, fallback: P
     return next((candidate for candidate in candidates if candidate.exists()), fallback)
 
 
+def _write_refined_input_image(output_path: Path, refined_mask: np.ndarray, base_image: np.ndarray) -> Path:
+    refined_dir = output_path / "refined_input_results"
+    refined_dir.mkdir(parents=True, exist_ok=True)
+    segmented = base_image.copy()
+    segmented[refined_mask == 0] = [240, 240, 240]
+    out_path = refined_dir / "segmented_rebar_refined.png"
+    cv2.imwrite(str(out_path), segmented)
+    return out_path
+
+
 def run_pipeline(
     project_path: Path,
     output_path: Path,
@@ -50,6 +61,7 @@ def run_pipeline(
     enable_plane_extraction: bool = True,
     plane_distance_threshold: float = 0.03,
     use_mask_grid_detector: bool = False,
+    input_mask_stage: str = "sam",
     sam_prompt_points=None,
 ) -> Tuple[Path, Optional[Path]]:
     """
@@ -66,39 +78,52 @@ def run_pipeline(
     logger.info(f"Output:  {output_path}")
     output_path.mkdir(parents=True, exist_ok=True)
     project_id = project_path.name
+    if input_mask_stage not in {"sam", "refined"}:
+        raise ValueError(f"Unsupported input_mask_stage: {input_mask_stage!r}")
 
-    # ── Step 1: SAM Mask Processing ──────────────────────────────────────
-    logger.info("\n[Step 1] SAM Mask Processing")
     proc = SamMaskProcessor()
     base_image = proc.load_base_image(project_path, project_id)
-    mask_result = proc.process_mask(sam_mask, base_image, output_path, project_id)
 
-    mask_binary = mask_result["mask_binary"]
-    segmented_image_path = mask_result["segmented_image_path"]
-    sam_coverage = mask_result["coverage"]
-
-    # ── Step 2: Plane Extraction (optional) ──────────────────────────────
-    refined_mask = None
-    plane_metadata = None
-
-    if enable_plane_extraction:
-        logger.info("\n[Step 2] 3D Plane Extraction")
-        try:
-            ext = PlaneExtractor(distance_threshold=plane_distance_threshold)
-            plane_result = ext.extract_surface_layer(
-                sam_mask=mask_binary,
-                project_path=project_path,
-                output_path=output_path,
-                sam_prompt_points=sam_prompt_points,
-            )
-            refined_mask = plane_result["refined_mask_original_res"]
-            mask_binary = refined_mask
-            plane_metadata = plane_result["plane_metadata"]
-            segmented_image_path = ext.update_segmented_image(output_path, refined_mask, base_image)
-        except Exception as e:
-            logger.error(f"Plane extraction failed: {e} — continuing with SAM mask")
+    if input_mask_stage == "refined":
+        logger.info("\n[Step 1] Refined Mask Input")
+        mask_binary = proc._convert_to_binary_mask(sam_mask)
+        mask_binary = proc._resize_mask_if_needed(mask_binary, base_image.shape[:2])
+        refined_mask = mask_binary
+        plane_metadata = None
+        coverage = float(np.sum(mask_binary > 0) / mask_binary.size)
+        logger.info(f"[Refined Mask] coverage={coverage:.1%} ({int(np.sum(mask_binary > 0)):,} px)")
+        segmented_image_path = _write_refined_input_image(output_path, refined_mask, base_image)
+        logger.info("\n[Step 2] Skipped (input mask is already plane-refined)")
     else:
-        logger.info("\n[Step 2] Skipped (plane extraction disabled)")
+        # ── Step 1: SAM Mask Processing ──────────────────────────────────
+        logger.info("\n[Step 1] SAM Mask Processing")
+        mask_result = proc.process_mask(sam_mask, base_image, output_path, project_id)
+
+        mask_binary = mask_result["mask_binary"]
+        segmented_image_path = mask_result["segmented_image_path"]
+
+        # ── Step 2: Plane Extraction (optional) ──────────────────────────
+        refined_mask = None
+        plane_metadata = None
+
+        if enable_plane_extraction:
+            logger.info("\n[Step 2] 3D Plane Extraction")
+            try:
+                ext = PlaneExtractor(distance_threshold=plane_distance_threshold)
+                plane_result = ext.extract_surface_layer(
+                    sam_mask=mask_binary,
+                    project_path=project_path,
+                    output_path=output_path,
+                    sam_prompt_points=sam_prompt_points,
+                )
+                refined_mask = plane_result["refined_mask_original_res"]
+                mask_binary = refined_mask
+                plane_metadata = plane_result["plane_metadata"]
+                segmented_image_path = ext.update_segmented_image(output_path, refined_mask, base_image)
+            except Exception as e:
+                logger.error(f"Plane extraction failed: {e} — continuing with SAM mask")
+        else:
+            logger.info("\n[Step 2] Skipped (plane extraction disabled)")
 
     if use_rectified_for_visualization:
         viz_image_path = _select_visualization_image(project_path, project_id, segmented_image_path)
@@ -188,6 +213,7 @@ def run_pipeline_auto(
     enable_plane_extraction: Optional[bool] = None,
     plane_distance_threshold: Optional[float] = None,
     use_mask_grid_detector: Optional[bool] = None,
+    input_mask_stage: str = "sam",
     config_path: Optional[str] = None,
     sam_prompt_points=None,
 ) -> Tuple[Path, Optional[Path]]:
@@ -227,5 +253,6 @@ def run_pipeline_auto(
             use_mask_grid_detector if use_mask_grid_detector is not None
             else cfg.use_mask_grid_detector()
         ),
+        input_mask_stage=input_mask_stage,
         sam_prompt_points=sam_prompt_points,
     )
