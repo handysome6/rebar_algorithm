@@ -23,18 +23,6 @@ prompt points or SAM mask -> SAM mask processing -> 3D plane extraction -> YOLO 
 
 Install `uv` using the official Astral instructions at <https://docs.astral.sh/uv/getting-started/installation/>.
 
-macOS/Linux:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
 Then set up this project:
 
 ```bash
@@ -75,9 +63,7 @@ Minimum files depend on the mode you run.
 
 | File | Required for | Format and notes |
 | --- | --- | --- |
-| `rect_left.jpg` | Recommended for all modes | Preferred visible left image. Used for point picking, segmentation visualization, overlays, and `StereoProject`. |
-| `raw_left.jpg` | Fallback image | Used if `rect_left.jpg` is missing in several loaders. |
-| `<project_id>_rect.jpg` or `<project_id>.jpg` | Fallback image | Supported by the SAM mask processing stage, where `project_id` is the project folder name. |
+| `rect_left.jpg` | Required for all pipeline modes | Rectified left image. The code fails strictly if this file is missing. |
 | `xyz_map.npz` | Plane extraction; optional 3D attachment in mask-grid | NumPy archive with key `xyz_map`, shape `(H, W, 3)`, values in metres. Required by `StereoProject`. |
 | `K.txt` | Metric YOLO line fitting and 3D projection | First line should contain 9 floats for a row-major 3x3 camera intrinsic matrix. An optional second line can contain baseline. |
 | `sam_mask.npy` | `--sam-mask` input mode | Precomputed SAM mask. Accepted shapes include 2D mask, `(H, W, 1)`, and RGBA `(H, W, 4)`. The pipeline converts it to binary. |
@@ -237,7 +223,7 @@ The top-level orchestrator is `src/rebar_algorithm/pipeline.py`.
 | --- | --- | --- | --- |
 | `run_pipeline_auto()` | Recommended Python API. Loads `configuration/rebar_conf.yaml`, applies explicit overrides, then calls `run_pipeline()`. | `project_path`, `output_path`, `sam_mask`, optional config/flags. | `(final_image_path, analysis_json_path)`. The JSON path can be `None` if YOLO detection fails. |
 | `run_pipeline()` | Lower-level API with explicit parameters. Used by `run_pipeline_auto()`. | Same core data, but all runtime options are passed directly. | `(final_image_path, analysis_json_path)`. |
-| `_select_visualization_image()` | Internal helper to choose an overlay base image. | Project path, project id, fallback segmented image. | First existing image from `rect_left.jpg`, `raw_left.jpg`, `<project_id>_rect.jpg`, `<project_id>.jpg`, otherwise fallback. |
+| `_select_visualization_image()` | Internal helper to choose an overlay base image. | Project path. | Path to `rect_left.jpg`; raises `FileNotFoundError` if missing. |
 | `_write_refined_input_image()` | Internal helper for `--refined-mask` mode. | Output path, refined mask, base image. | Writes `refined_input_results/segmented_rebar_refined.png`. |
 
 ## Pipeline Stages
@@ -248,7 +234,7 @@ Module: `src/rebar_algorithm/app_api.py`
 
 | Function | Usage | Input | Output |
 | --- | --- | --- | --- |
-| `find_project_image()` | Finds an image for point picking and SAM upload. | `project_path`. | Path to `rect_left.jpg` or `raw_left.jpg`. |
+| `find_project_image()` | Finds the required image for point picking and SAM upload. | `project_path`. | Path to `rect_left.jpg`; raises `FileNotFoundError` if missing. |
 | `get_sam_mask()` | Calls the SAM server and caches the returned mask. | `project_path`, prompt points as `(x, y)`, `output_path`. | `(sam_mask, points_xy)` and files `sam_segment_results/sam_mask.npy`, `sam_segment_results/sam_prompt_points.npy`. |
 | `run_pipeline_from_points()` | App/GUI helper for point-driven runs. | Project path, points, detector and config options. | `PipelineRunResult` with final image, analysis JSON, output path, SAM mask path, and prompt point path. |
 
@@ -264,7 +250,7 @@ Module: `src/rebar_algorithm/stages/sam_mask.py`
 
 | Function | Usage | Input | Output |
 | --- | --- | --- | --- |
-| `SamMaskProcessor.load_base_image()` | Loads the image used for segmentation output and overlays. | `project_path`, `project_id`. | OpenCV BGR image. Tries `rect_left.jpg`, `raw_left.jpg`, `<project_id>_rect.jpg`, `<project_id>.jpg`. |
+| `SamMaskProcessor.load_base_image()` | Loads the required image used for segmentation output and overlays. | `project_path`, `project_id`. | OpenCV BGR image from `rect_left.jpg`; raises if missing or unreadable. |
 | `SamMaskProcessor.process_mask()` | Converts SAM output to a binary mask and segmented image. | `sam_mask`, base image, `output_path`, `project_id`. | Dict with `mask_binary`, `segmented_image`, `segmented_image_path`, `mask_path`, `coverage`, `mask_pixels`. |
 | `_convert_to_binary_mask()` | Normalizes SAM mask formats. | 2D mask, `(H, W, 1)`, or RGBA `(H, W, 4)`. | Binary uint8 mask. |
 | `_resize_mask_if_needed()` | Aligns mask size with the base image. | Binary mask and target `(height, width)`. | Resized or original mask. |
@@ -296,7 +282,7 @@ Files required:
 
 ```text
 <project>/xyz_map.npz
-<project>/rect_left.jpg or <project>/raw_left.jpg
+<project>/rect_left.jpg
 ```
 
 Files written:

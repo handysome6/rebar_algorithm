@@ -21,7 +21,7 @@ class StereoProject:
 
     Required files in project_path:
         - xyz_map.npz   — per-pixel 3D coordinates (H, W, 3), metres
-        - rect_left.jpg — rectified left image (or raw_left.jpg)
+        - rect_left.jpg — rectified left image
         - K.txt          — camera intrinsics (3x3 matrix) + baseline on second line
     """
 
@@ -48,17 +48,10 @@ class StereoProject:
             self.K, self.baseline = self._load_K(k_path)
 
     def _find_image(self) -> Path:
-        candidates = [
-            self.project_path / ProjectFileNames.RECT_LEFT,
-            self.project_path / ProjectFileNames.RAW_LEFT,
-        ]
-        for c in candidates:
-            if c.exists():
-                return c
-        raise FileNotFoundError(
-            f"No rectified image found in {self.project_path}. "
-            f"Tried: {', '.join(c.name for c in candidates)}"
-        )
+        image_path = self.project_path / ProjectFileNames.RECT_LEFT
+        if image_path.exists():
+            return image_path
+        raise FileNotFoundError(f"Required image not found: {image_path}")
 
     @staticmethod
     def _load_K(path: Path) -> Tuple[Optional[np.ndarray], Optional[float]]:

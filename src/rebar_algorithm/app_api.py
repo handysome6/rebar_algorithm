@@ -26,15 +26,11 @@ class PipelineRunResult:
 
 
 def find_project_image(project_path: Path) -> Path:
-    """Return the preferred visible image for point picking."""
-    candidates = [
-        project_path / ProjectFileNames.RECT_LEFT,
-        project_path / ProjectFileNames.RAW_LEFT,
-    ]
-    for image_path in candidates:
-        if image_path.exists():
-            return image_path
-    raise FileNotFoundError(f"No image found in {project_path}")
+    """Return the required rectified image for point picking."""
+    image_path = project_path / ProjectFileNames.RECT_LEFT
+    if image_path.exists():
+        return image_path
+    raise FileNotFoundError(f"Required image not found: {image_path}")
 
 
 def get_sam_mask(

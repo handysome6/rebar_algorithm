@@ -16,11 +16,12 @@ def test_find_project_image_prefers_rect_left(tmp_path: Path):
     assert find_project_image(tmp_path) == rect
 
 
-def test_find_project_image_falls_back_to_raw_left(tmp_path: Path):
+def test_find_project_image_requires_rect_left_even_if_raw_exists(tmp_path: Path):
     raw = tmp_path / "raw_left.jpg"
     raw.write_bytes(b"raw")
 
-    assert find_project_image(tmp_path) == raw
+    with pytest.raises(FileNotFoundError):
+        find_project_image(tmp_path)
 
 
 def test_find_project_image_requires_known_image(tmp_path: Path):

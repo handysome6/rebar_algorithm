@@ -30,14 +30,11 @@ from .stages import (
 )
 
 
-def _select_visualization_image(project_path: Path, project_id: str, fallback: Path) -> Path:
-    candidates = [
-        project_path / ProjectFileNames.RECT_LEFT,
-        project_path / ProjectFileNames.RAW_LEFT,
-        project_path / f"{project_id}_rect.jpg",
-        project_path / f"{project_id}.jpg",
-    ]
-    return next((candidate for candidate in candidates if candidate.exists()), fallback)
+def _select_visualization_image(project_path: Path) -> Path:
+    image_path = project_path / ProjectFileNames.RECT_LEFT
+    if image_path.exists():
+        return image_path
+    raise FileNotFoundError(f"Required image not found: {image_path}")
 
 
 def _write_refined_input_image(output_path: Path, refined_mask: np.ndarray, base_image: np.ndarray) -> Path:
@@ -126,7 +123,7 @@ def run_pipeline(
             logger.info("\n[Step 2] Skipped (plane extraction disabled)")
 
     if use_rectified_for_visualization:
-        viz_image_path = _select_visualization_image(project_path, project_id, segmented_image_path)
+        viz_image_path = _select_visualization_image(project_path)
     else:
         viz_image_path = segmented_image_path
 

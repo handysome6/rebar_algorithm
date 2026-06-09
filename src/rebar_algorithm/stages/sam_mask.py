@@ -85,19 +85,12 @@ class SamMaskProcessor:
 
     @staticmethod
     def load_base_image(project_path: Path, project_id: str) -> np.ndarray:
-        """Load the rectified base image, trying several naming conventions."""
-        candidates = [
-            project_path / ProjectFileNames.RECT_LEFT,
-            project_path / ProjectFileNames.RAW_LEFT,
-            project_path / f"{project_id}_rect.jpg",
-            project_path / f"{project_id}.jpg",
-        ]
-        for c in candidates:
-            if c.exists():
-                img = cv2.imread(str(c))
-                if img is not None:
-                    logger.info(f"[SAM Mask] Base image: {c.name}")
-                    return img
-        raise FileNotFoundError(
-            "Rectified image not found. Tried:\n" + "\n".join(f"  - {c}" for c in candidates)
-        )
+        """Load the required rectified base image."""
+        image_path = project_path / ProjectFileNames.RECT_LEFT
+        if not image_path.exists():
+            raise FileNotFoundError(f"Required image not found: {image_path}")
+        img = cv2.imread(str(image_path))
+        if img is None:
+            raise ValueError(f"Cannot read required image: {image_path}")
+        logger.info(f"[SAM Mask] Base image: {image_path.name}")
+        return img

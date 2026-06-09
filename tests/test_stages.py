@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from rebar_algorithm.data import StereoProject
 from rebar_algorithm.stages.sam_mask import SamMaskProcessor
 from rebar_algorithm.stages.line_fitting import LineFittingAnalyzer
 from rebar_algorithm.stages.mask_grid import MaskGridDetector
@@ -28,6 +29,23 @@ class TestSamMaskProcessor:
         proc = SamMaskProcessor()
         resized = proc._resize_mask_if_needed(mask, (100, 200))
         assert resized.shape == (100, 200)
+
+    def test_load_base_image_requires_rect_left_even_if_project_named_image_exists(self, tmp_path):
+        project = tmp_path / "project_001"
+        project.mkdir()
+        (project / "project_001_rect.jpg").write_bytes(b"not used")
+
+        proc = SamMaskProcessor()
+        with pytest.raises(FileNotFoundError):
+            proc.load_base_image(project, "project_001")
+
+
+def test_stereo_project_requires_rect_left_even_if_raw_exists(tmp_path):
+    np.savez(str(tmp_path / "xyz_map.npz"), xyz_map=np.ones((2, 2, 3), dtype=float))
+    (tmp_path / "raw_left.jpg").write_bytes(b"not used")
+
+    with pytest.raises(FileNotFoundError):
+        StereoProject(tmp_path)
 
 
 class TestLineFittingAnalyzer:
