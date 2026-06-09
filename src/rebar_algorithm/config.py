@@ -65,6 +65,7 @@ class RebarConfig:
             },
             "detection": {
                 "use_existing_annotations": True,
+                "use_mask_grid_detector": False,
                 "output_dir_name": "rebar_output_sam",
             },
             "visualization": {"use_rectified_for_visualization": True},
@@ -101,6 +102,9 @@ class RebarConfig:
     # -- detection ------------------------------------------------------------
     def use_existing_annotations(self) -> bool:
         return self.config.get("detection", {}).get("use_existing_annotations", True)
+
+    def use_mask_grid_detector(self) -> bool:
+        return self.config.get("detection", {}).get("use_mask_grid_detector", False)
 
     # -- visualization --------------------------------------------------------
     def use_rectified_for_visualization(self) -> bool:

@@ -27,6 +27,10 @@ fallback_server:
 detection:
   # 是否优先使用现有标注（如果存在）
   use_existing_annotations: true
+
+  # 是否使用 refined mask 的几何网格检测并跳过 YOLO
+  # Use refined-mask geometry to detect bars/intersections and skip YOLO
+  use_mask_grid_detector: false
   
   # 输出目录名称（相对于项目路径）
   output_dir_name: rebar_output_sam
@@ -57,4 +61,3 @@ plane_extraction:
   # 用于平面拟合的内点判断阈值（默认1cm）
   # Threshold for classifying inliers during plane fitting (default 1cm)
   ransac_distance_threshold: 0.01
-

@@ -10,6 +10,9 @@ Usage:
 
     # Skip plane extraction, use existing YOLO results
     rebar-demo -p ~/DCIM/A_579901304753 --mask mask.npy --no-plane --use-existing
+
+    # Use refined-mask grid geometry and skip YOLO inference
+    rebar-demo -p ~/DCIM/A_579901304753 --mask mask.npy --mask-grid
 """
 
 import argparse
@@ -92,6 +95,9 @@ examples:
   # Skip plane extraction, use existing YOLO results
   rebar-demo -p ~/DCIM/A_579901304753 --mask sam_mask.npy --no-plane --use-existing
 
+  # Skip YOLO and detect lines/intersections directly from the refined mask
+  rebar-demo -p ~/DCIM/A_579901304753 --mask sam_mask.npy --mask-grid
+
   # Custom YOLO server + plane threshold
   rebar-demo -p ~/DCIM/A_579901304753 --mask sam_mask.npy \\
              --yolo-url http://localhost:2001 --plane-threshold 0.05
@@ -117,6 +123,8 @@ examples:
                         help="Plane distance threshold in metres (default: 0.03)")
     parser.add_argument("--use-existing", action="store_true",
                         help="Reuse existing YOLO annotations if available")
+    parser.add_argument("--mask-grid", action="store_true",
+                        help="Use refined-mask grid detection and skip YOLO inference")
     parser.add_argument("--config", type=Path, default=None,
                         help="Custom rebar_conf.yaml path")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -158,6 +166,7 @@ examples:
         use_existing_annotations=args.use_existing or None,
         enable_plane_extraction=False if args.no_plane else None,
         plane_distance_threshold=args.plane_threshold,
+        use_mask_grid_detector=True if args.mask_grid else None,
         config_path=str(args.config) if args.config else None,
         sam_prompt_points=prompt_points,
     )

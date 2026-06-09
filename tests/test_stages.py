@@ -5,6 +5,7 @@ import pytest
 
 from rebar_algorithm.stages.sam_mask import SamMaskProcessor
 from rebar_algorithm.stages.line_fitting import LineFittingAnalyzer
+from rebar_algorithm.stages.mask_grid import MaskGridDetector
 
 
 class TestSamMaskProcessor:
@@ -56,3 +57,20 @@ class TestLineFittingAnalyzer:
         ], dtype=float)
         lines = analyzer._fit_lines_with_clustering(pts, "y", 300)
         assert len(lines) == 3
+
+
+class TestMaskGridDetector:
+    def test_analyze_synthetic_grid(self):
+        cv2 = pytest.importorskip("cv2")
+
+        mask = np.zeros((220, 320), dtype=np.uint8)
+        for y in (50, 110, 170):
+            cv2.line(mask, (20, y), (300, y), 1, 9)
+        for x in (80, 220):
+            cv2.line(mask, (x, 20), (x, 200), 1, 9)
+
+        analysis = MaskGridDetector().analyze_mask(mask)
+
+        assert analysis["line_fitting_summary"]["horizontal_lines"] == 3
+        assert analysis["line_fitting_summary"]["vertical_lines"] == 2
+        assert analysis["intersection_analysis"]["count"] == 6

@@ -1,7 +1,9 @@
 """
 Rebar Pipeline Orchestrator
 
-Connects the 6 modular pipeline stages:
+Connects the modular pipeline stages:
+    SAM Mask → Plane Extraction → Mask Grid Detection
+or:
     SAM Mask → Plane Extraction → YOLO Detection → Line Fitting → Spatial Analysis → Visualization
 
 Public API:
@@ -19,11 +21,22 @@ from .config import ProjectFileNames
 from .stages import (
     SamMaskProcessor,
     PlaneExtractor,
+    MaskGridDetector,
     KnotDetector,
     LineFitter,
     SpatialAnalyzer,
     Visualizer,
 )
+
+
+def _select_visualization_image(project_path: Path, project_id: str, fallback: Path) -> Path:
+    candidates = [
+        project_path / ProjectFileNames.RECT_LEFT,
+        project_path / ProjectFileNames.RAW_LEFT,
+        project_path / f"{project_id}_rect.jpg",
+        project_path / f"{project_id}.jpg",
+    ]
+    return next((candidate for candidate in candidates if candidate.exists()), fallback)
 
 
 def run_pipeline(
@@ -36,14 +49,15 @@ def run_pipeline(
     use_rectified_for_visualization: bool = True,
     enable_plane_extraction: bool = True,
     plane_distance_threshold: float = 0.03,
+    use_mask_grid_detector: bool = False,
     sam_prompt_points=None,
 ) -> Tuple[Path, Optional[Path]]:
     """
     Run the complete rebar detection pipeline.
 
     Returns:
-        (final_image_path, analysis_json_path)  — json_path may be None
-        if YOLO detection fails.
+        (final_image_path, analysis_json_path) — json_path may be None
+        if YOLO detection fails in the YOLO path.
     """
     logger.info("=" * 70)
     logger.info(" Rebar Detection Pipeline")
@@ -86,6 +100,33 @@ def run_pipeline(
     else:
         logger.info("\n[Step 2] Skipped (plane extraction disabled)")
 
+    if use_rectified_for_visualization:
+        viz_image_path = _select_visualization_image(project_path, project_id, segmented_image_path)
+    else:
+        viz_image_path = segmented_image_path
+
+    # ── Step 3A: Mask Grid Detection (YOLO-free path) ─────────────────────
+    if use_mask_grid_detector:
+        logger.info("\n[Step 3] Mask Grid Detection (YOLO-free)")
+        detector = MaskGridDetector()
+        grid_mask = refined_mask if refined_mask is not None else mask_binary
+        grid_result = detector.detect_grid(
+            refined_mask=grid_mask,
+            output_path=output_path,
+            image_path=viz_image_path,
+            refined_image_path=segmented_image_path,
+            project_path=project_path,
+        )
+        final_image_path = grid_result["final_image_path"] or segmented_image_path
+        analysis_json_path = grid_result["analysis_json_path"]
+
+        logger.info("\n" + "=" * 70)
+        logger.info("Pipeline Complete (Mask Grid)")
+        logger.info(f"  Result image: {final_image_path}")
+        logger.info(f"  Analysis JSON: {analysis_json_path}")
+        logger.info("=" * 70)
+        return final_image_path, analysis_json_path
+
     # ── Step 3: YOLO Knot Detection ──────────────────────────────────────
     logger.info("\n[Step 3] YOLO Rebar Knot Detection")
     detector = KnotDetector(server_url=server_url)
@@ -103,17 +144,6 @@ def run_pipeline(
 
     # ── Step 4: Line Fitting ─────────────────────────────────────────────
     logger.info("\n[Step 4] Rebar Line Fitting")
-    if use_rectified_for_visualization:
-        candidates = [
-            project_path / ProjectFileNames.RECT_LEFT,
-            project_path / ProjectFileNames.RAW_LEFT,
-            project_path / f"{project_id}_rect.jpg",
-            project_path / f"{project_id}.jpg",
-        ]
-        viz_image_path = next((c for c in candidates if c.exists()), segmented_image_path)
-    else:
-        viz_image_path = segmented_image_path
-
     fitter = LineFitter(ai_matcher=ai_matcher)
     line_result = fitter.fit_lines(
         pose_data_path=pose_data_path,
@@ -157,6 +187,7 @@ def run_pipeline_auto(
     use_rectified_for_visualization: Optional[bool] = None,
     enable_plane_extraction: Optional[bool] = None,
     plane_distance_threshold: Optional[float] = None,
+    use_mask_grid_detector: Optional[bool] = None,
     config_path: Optional[str] = None,
     sam_prompt_points=None,
 ) -> Tuple[Path, Optional[Path]]:
@@ -191,6 +222,10 @@ def run_pipeline_auto(
         plane_distance_threshold=(
             plane_distance_threshold if plane_distance_threshold is not None
             else cfg.get_plane_distance_threshold()
+        ),
+        use_mask_grid_detector=(
+            use_mask_grid_detector if use_mask_grid_detector is not None
+            else cfg.use_mask_grid_detector()
         ),
         sam_prompt_points=sam_prompt_points,
     )
