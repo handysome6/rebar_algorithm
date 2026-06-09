@@ -50,6 +50,7 @@ class RebarGui(tk.Tk):
         self.input_photo: Optional[ImageTk.PhotoImage] = None
         self.result_photo: Optional[ImageTk.PhotoImage] = None
         self.last_result: Optional[PipelineRunResult] = None
+        self.output_default_path: Optional[Path] = None
 
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker: Optional[threading.Thread] = None
@@ -125,37 +126,54 @@ class RebarGui(tk.Tk):
         run_box.columnconfigure(1, weight=1)
 
         ttk.Label(run_box, text="Detector").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
-        ttk.Combobox(
+        self.detector_combo = ttk.Combobox(
             run_box,
             textvariable=self.detector_var,
             values=DETECTOR_CHOICES,
             state="readonly",
-        ).grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=(8, 4))
+        )
+        self.detector_combo.grid(row=0, column=1, sticky="ew", padx=(4, 8), pady=(8, 4))
+        self.detector_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_detector_options())
 
-        ttk.Checkbutton(
+        self.plane_check = ttk.Checkbutton(
             run_box,
-            text="Plane extraction",
+            text="Refine mask by 3D plane",
             variable=self.plane_enabled_var,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=4)
+            command=self._update_plane_options,
+        )
+        self.plane_check.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=4)
 
-        ttk.Label(run_box, text="Threshold").grid(row=2, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(run_box, textvariable=self.plane_threshold_var, width=10).grid(
+        self.plane_threshold_label = ttk.Label(run_box, text="Plane distance (m)")
+        self.plane_threshold_label.grid(row=2, column=0, sticky="w", padx=8, pady=4)
+        self.plane_threshold_entry = ttk.Entry(run_box, textvariable=self.plane_threshold_var, width=10)
+        self.plane_threshold_entry.grid(
             row=2, column=1, sticky="ew", padx=(4, 8), pady=4
         )
 
-        ttk.Label(run_box, text="YOLO URL").grid(row=3, column=0, sticky="w", padx=8, pady=4)
-        ttk.Entry(run_box, textvariable=self.yolo_url_var).grid(
-            row=3, column=1, sticky="ew", padx=(4, 8), pady=4
+        self.yolo_options_frame = ttk.Frame(run_box)
+        self.yolo_options_frame.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.yolo_options_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(self.yolo_options_frame, text="YOLO URL").grid(
+            row=0, column=0, sticky="w", padx=8, pady=4
+        )
+        self.yolo_url_entry = ttk.Entry(self.yolo_options_frame, textvariable=self.yolo_url_var)
+        self.yolo_url_entry.grid(
+            row=0, column=1, sticky="ew", padx=(4, 8), pady=4
         )
 
-        ttk.Checkbutton(
-            run_box,
+        self.use_existing_check = ttk.Checkbutton(
+            self.yolo_options_frame,
             text="Reuse YOLO annotations",
             variable=self.use_existing_var,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=8, pady=4)
+        )
+        self.use_existing_check.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=4)
 
         self.run_button = ttk.Button(run_box, text="Run Pipeline", command=self._start_run)
-        self.run_button.grid(row=5, column=0, columnspan=2, sticky="ew", padx=8, pady=(8, 8))
+        self.run_button.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(8, 8))
+
+        self._update_detector_options()
+        self._update_plane_options()
 
         points_box = ttk.LabelFrame(parent, text="Prompt Points")
         points_box.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
@@ -251,8 +269,11 @@ class RebarGui(tk.Tk):
             messagebox.showerror("Image Not Found", str(exc))
             return
 
-        if not self.output_var.get().strip():
-            self.output_var.set(str(project_path / "rebar_output"))
+        current_output = self.output_var.get().strip()
+        new_default_output = project_path / "rebar_output"
+        if not current_output or self._same_path(current_output, self.output_default_path):
+            self.output_var.set(str(new_default_output))
+        self.output_default_path = new_default_output
         self.points.clear()
         self._refresh_point_list()
         self._render_input_image()
@@ -290,6 +311,17 @@ class RebarGui(tk.Tk):
     def _clear_result_image(self) -> None:
         self.result_canvas.delete("all")
         self.last_result = None
+
+    def _update_detector_options(self) -> None:
+        if self.detector_var.get() == "yolo":
+            self.yolo_options_frame.grid()
+        else:
+            self.yolo_options_frame.grid_remove()
+
+    def _update_plane_options(self) -> None:
+        state = tk.NORMAL if self.plane_enabled_var.get() else tk.DISABLED
+        self.plane_threshold_label.configure(state=state)
+        self.plane_threshold_entry.configure(state=state)
 
     # ------------------------------------------------------------------
     # Point editing
@@ -368,8 +400,8 @@ class RebarGui(tk.Tk):
 
         points = list(self.points)
         detector = self.detector_var.get()
-        yolo_url = self.yolo_url_var.get().strip() or None
-        use_existing = self.use_existing_var.get()
+        yolo_url = (self.yolo_url_var.get().strip() or None) if detector == "yolo" else None
+        use_existing = self.use_existing_var.get() if detector == "yolo" else None
         enable_plane = self.plane_enabled_var.get()
 
         self.run_button.config(state=tk.DISABLED)
@@ -412,6 +444,15 @@ class RebarGui(tk.Tk):
         except ValueError:
             raise ValueError("Plane threshold must be a number.")
 
+    @staticmethod
+    def _same_path(path_text: str, other: Optional[Path]) -> bool:
+        if other is None:
+            return False
+        try:
+            return Path(path_text).expanduser().resolve() == other.expanduser().resolve()
+        except OSError:
+            return Path(path_text).expanduser() == other.expanduser()
+
     def _run_worker(
         self,
         project_path: Path,
@@ -419,7 +460,7 @@ class RebarGui(tk.Tk):
         points: list[tuple[int, int]],
         detector: str,
         yolo_url: Optional[str],
-        use_existing: bool,
+        use_existing: Optional[bool],
         enable_plane: bool,
         threshold: Optional[float],
     ) -> None:
